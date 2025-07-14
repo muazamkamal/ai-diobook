@@ -6,13 +6,14 @@ import subprocess
 from typing import Optional
 
 class TTSBackend:
-    def __init__(self, backend: str = "coqui", model_name: Optional[str] = None, device: Optional[str] = None, speaker: Optional[str] = None, piper_voice: Optional[str] = None, piper_exe: str = "piper"):
+    def __init__(self, backend: str = "coqui", model_name: Optional[str] = None, device: Optional[str] = None, speaker: Optional[str] = None, piper_voice: Optional[str] = None, piper_exe: str = "piper", reference_audio: str = "data/reference.wav"):
         self.backend = backend
         self.model_name = model_name
         self.device = device
         self.speaker = speaker
         self.piper_voice = piper_voice
         self.piper_exe = piper_exe
+        self.reference_audio = reference_audio
         if backend == "coqui":
             from TTS.api import TTS
             self.tts = TTS(model_name).to(device)
@@ -24,7 +25,14 @@ class TTSBackend:
 
     def tts_to_file(self, text: str, file_path: str, language: Optional[str] = None):
         if self.backend == "coqui":
-            self.tts.tts_to_file(text=text, speaker=self.speaker, language=language, file_path=file_path)
+            kwargs = dict(text=text, language=language, file_path=file_path)
+            # Only use speaker_wav if reference_audio is set and file exists
+            if self.reference_audio and Path(self.reference_audio).is_file():
+                kwargs["speaker_wav"] = self.reference_audio
+            else:
+                kwargs["speaker"] = self.speaker
+
+            self.tts.tts_to_file(**kwargs)
         elif self.backend == "piper":
             # Piper CLI expects: echo "text" | piper --model <voice> --output_file <file>
             cmd = [self.piper_exe, "--model", self.piper_voice, "--output_file", file_path]
@@ -43,7 +51,8 @@ def generate_audio(
     model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2",
     backend: str = "coqui",
     piper_voice: Optional[str] = None,
-    piper_exe: str = "piper"
+    piper_exe: str = "piper",
+    reference_audio: str = "data/reference.wav"
 ) -> str:
     """
     Generate audio files from text chunks using Coqui TTS or Piper TTS
@@ -57,6 +66,7 @@ def generate_audio(
         backend (str): TTS backend to use ("coqui" or "piper")
         piper_voice (Optional[str]): Path to Piper voice model (.onnx or .pth)
         piper_exe (str): Path to Piper executable
+        reference_audio (Optional[str]): Path to reference audio for voice cloning defaits (`data/reference.wav`)
         
     Returns:
         str: Path to the output directory containing generated audio files
@@ -74,7 +84,8 @@ def generate_audio(
         device=device,
         speaker=speaker,
         piper_voice=piper_voice,
-        piper_exe=piper_exe
+        piper_exe=piper_exe,
+        reference_audio=reference_audio
     )
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -127,6 +138,7 @@ if __name__ == "__main__":
     parser.add_argument("--backend", default="coqui", choices=["coqui", "piper"])
     parser.add_argument("--piper_voice", default="data/models/en_US-hfc_female-medium.onnx", help="Path to Piper voice model (.onnx or .pth)")
     parser.add_argument("--piper_exe", default="piper", help="Path to Piper executable")
+    parser.add_argument("--reference_audio", default="data/reference.wav", help="Path to reference audio for voice cloning (Coqui only)")
     args = parser.parse_args()
     generate_audio(
         chunks_json=args.chunks_json,
@@ -136,5 +148,6 @@ if __name__ == "__main__":
         model_name=args.model_name,
         backend=args.backend,
         piper_voice=args.piper_voice,
-        piper_exe=args.piper_exe
+        piper_exe=args.piper_exe,
+        reference_audio=args.reference_audio
     )

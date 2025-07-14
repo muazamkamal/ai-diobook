@@ -62,19 +62,52 @@ def stitch_audio(
             start_idx = 1
         print(f"[audio] Processing {len(files_to_stitch)} files...")
 
+        # Track chapter start/end times in ms
+        chapter_markers = {}
+        current_ms = 0
+        chapter_idx = 0 # Chapter 0 is intro
+        last_chapter_idx = None
+
+        # If the first audio is a chapter announcement, then skip chapter marker 0/intro
+        if "chapter_1.wav" in files_to_stitch[0]:
+            chapter_idx = 1
+
+        chapter_markers[str(chapter_idx)] = {"start_ms": current_ms}
+
         # Add subsequent files with crossfading or pause
-        for wav_file in files_to_stitch[start_idx:]:
+        for idx, wav_file in enumerate(files_to_stitch[start_idx:]):
+            # Check if processing next chapter, then mark current chapter end and increment the chapter id and mark start time
+            if (f"chapter_{chapter_idx + 1}.wav" in wav_file):
+                chapter_markers[str(chapter_idx)]["end_ms"] = max(current_ms - len(pause), 0)
+                chapter_idx += 1
+                chapter_markers[str(chapter_idx)] = { "start_ms": max(current_ms - len(pause), 0)}
+
             if wav_file == "__PAUSE__":
                 combined = combined.append(pause, crossfade=0)
             else:
                 next_segment = AudioSegment.from_wav(wav_file)
                 combined = combined.append(next_segment, crossfade=fade_duration)
 
+            current_ms = len(combined)
+
+            # If the file processed was the last file, mark end for the chapter
+            if idx+2 == len(files_to_stitch) and str(chapter_idx) in chapter_markers:
+                chapter_markers[str(chapter_idx)]["end_ms"] = current_ms
+
         # Create output directory if needed
         Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         # Export final audio
         combined.export(output_file, format="wav")
         print(f"[audio] Exported stitched audio to {output_file}")
+
+        # Save chapter markers to chunks.json
+        with open(chunks_json, 'r+', encoding='utf-8') as f:
+            data = json.load(f)
+            data["chapter_markers"] = chapter_markers
+            f.seek(0)
+            json.dump(data, f, indent=2)
+            f.truncate()
+
         return output_file
 
     except Exception as e:
@@ -82,8 +115,16 @@ def stitch_audio(
         raise
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        stitch_audio(input_dir=sys.argv[1])
-    else:
-        stitch_audio()
+    import argparse
+    parser = argparse.ArgumentParser(description="Stitch audiobook WAV files with chapter markers.")
+    parser.add_argument("--input_dir", default="data/audio", help="Directory containing WAV files")
+    parser.add_argument("--output_file", default="data/output.wav", help="Path to output WAV file")
+    parser.add_argument("--fade_duration", type=int, default=100, help="Crossfade duration in ms")
+    parser.add_argument("--chunks_json", default="data/chunks.json", help="Path to chunks.json")
+    args = parser.parse_args()
+    stitch_audio(
+        input_dir=args.input_dir,
+        output_file=args.output_file,
+        fade_duration=args.fade_duration,
+        chunks_json=args.chunks_json
+    )

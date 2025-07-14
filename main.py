@@ -5,7 +5,7 @@ from extract.pdf import extract_text as extract_pdf
 from textchunk.chunker import chunk_text
 from tts.generate import generate_audio
 from audio.stitch import stitch_audio
-from audio.convert import convert_wav_to_mp3
+from audio.convert import convert_wav_to_mp3, convert_wav_to_m4b
 
 def process_book(
     input_file: str,
@@ -68,8 +68,12 @@ def process_book(
         final_audio = stitch_audio(audio_dir, output_file)
         # Convert to MP3 after stitching
         mp3_output = str(Path(output_file).with_suffix('.mp3'))
-        convert_wav_to_mp3(final_audio, mp3_output, bitrate="192k")
+        convert_wav_to_mp3(final_audio, mp3_output, bitrate="192k", chunks_json_path=chunks_file)
         print(f"MP3 saved to: {mp3_output}")
+        # Convert to M4B after stitching
+        m4b_output = str(Path(output_file).with_suffix('.m4b'))
+        convert_wav_to_m4b(final_audio, m4b_output, bitrate="128k", chunks_json_path=chunks_file, chapters=None)
+        print(f"M4B saved to: {m4b_output}")
         return final_audio
     except Exception as e:
         print(f"[main] Error: {str(e)}")
